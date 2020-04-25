@@ -1,6 +1,7 @@
 import asyncio
 from enum import Enum
-from typing import Dict, Iterable, Any, List, Callable, Generic, TypeVar, Union
+from pprint import pprint
+from typing import Dict, Any, Callable, Generic, TypeVar
 
 import aiohttp
 from monads import Result, Ok, Err, Future
@@ -41,6 +42,7 @@ def download_url(url: str) -> Future[Result[aiohttp.ClientResponse, ErrorEnum]]:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as resp:
+                    await resp.read()
                     return Ok(resp)
         except:
             return Err(ErrorEnum.IoError)
@@ -48,23 +50,31 @@ def download_url(url: str) -> Future[Result[aiohttp.ClientResponse, ErrorEnum]]:
     return Future(fn())
 
 
-def validate_http_response(res: aiohttp.ClientResponse) -> Result[Dict[str, str], ErrorEnum]:
-    if res.content_type != "application/json":
-        return Err(ErrorEnum.InvalidResponse)
-    if res.status >= 400:
-        return Err(ErrorEnum.InvalidResponse)
+def validate_http_response(res: aiohttp.ClientResponse) -> Future[Result[Dict[Any, Any], ErrorEnum]]:
+    async def fn() -> Result[Dict[str, str], ErrorEnum]:
+        if res.content_type != "application/json":
+            return Err(ErrorEnum.InvalidResponse)
+        if res.status >= 400:
+            return Err(ErrorEnum.InvalidResponse)
 
-    return Ok({
-        "status": res.status,
-        "header": str(res.headers.items())
-    })
+        return Ok({
+            "status": res.status,
+            "body": await res.json(),
+            "headers": res.headers,
+        })
+
+    return Future(fn())
 
 
-async def download_valid_url_and_validate(url: str) -> Result[Dict[str, str], ErrorEnum]:
+async def download_valid_url_and_validate(url: str) -> Result[Dict[Any, Any], ErrorEnum]:
     return await FutureResult(Future.pure(check_url(url)))\
             .bind(lambda u: FutureResult(download_url(u)))\
-            .map(validate_http_response)
+            .bind(lambda r: FutureResult(validate_http_response(r)))
 
 
 if __name__ == "__main__":
-    print(asyncio.run(download_valid_url_and_validate("https://postman-echo.com/get?foo1=bar1&foo2=bar2")))
+    result: Result[Dict[Any, Any], ErrorEnum] = asyncio.run(
+        download_valid_url_and_validate("https://postman-echo.com/get?foo1=bar1&foo2=bar2")
+    )
+
+    result.map(pprint).mapError(print)
