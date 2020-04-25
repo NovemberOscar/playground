@@ -1,9 +1,29 @@
 import asyncio
 from enum import Enum
-from typing import Dict
+from typing import Dict, Iterable, Any, List, Callable, Generic, TypeVar, Union
 
 import aiohttp
 from monads import Result, Ok, Err, Future
+
+A = TypeVar("A")
+B = TypeVar("B")
+C = TypeVar("C")
+
+
+class FutureResult(Generic[A, B]):
+    def __init__(self, fut_res: Future[Result[A, B]]):
+        self.fut_res = fut_res
+
+    def map(self, fn: Callable[[A], Result[C, B]]) -> "FutureResult[A, B]":
+        return FutureResult(self.fut_res.map(lambda res: res.map(fn)))
+
+    def bind(self, fn: Callable[[A], "FutureResult[C, B]"]) -> "FutureResult[A, B]":
+        return FutureResult(
+            self.fut_res.bind(lambda r: fn(r.value).fut_res if isinstance(r, Ok) else Future.pure(Err(r.err)))
+        )
+
+    def __await__(self):
+        return self.fut_res.__await__()
 
 
 class ErrorEnum(Enum):
@@ -25,7 +45,7 @@ def download_url(url: str) -> Future[Result[aiohttp.ClientResponse, ErrorEnum]]:
         except:
             return Err(ErrorEnum.IoError)
 
-    return Future(fn)
+    return Future(fn())
 
 
 def validate_http_response(res: aiohttp.ClientResponse) -> Result[Dict[str, str], ErrorEnum]:
@@ -41,8 +61,10 @@ def validate_http_response(res: aiohttp.ClientResponse) -> Result[Dict[str, str]
 
 
 async def download_valid_url_and_validate(url: str) -> Result[Dict[str, str], ErrorEnum]:
-    pass  # We need a monad transformer
+    return await FutureResult(Future.pure(check_url(url)))\
+            .bind(lambda u: FutureResult(download_url(u)))\
+            .map(validate_http_response)
 
 
 if __name__ == "__main__":
-    asyncio.run(download_valid_url_and_validate("https://postman-echo.com/get?foo1=bar1&foo2=bar2"))
+    print(asyncio.run(download_valid_url_and_validate("https://postman-echo.com/get?foo1=bar1&foo2=bar2")))
