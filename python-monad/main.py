@@ -62,12 +62,13 @@ def validate_http_response(res: aiohttp.ClientResponse) -> Future[Result[Dict[An
         if res.status >= 400:
             return Err(ErrorEnum.InvalidResponse)
 
-        return Ok({"status": res.status, "body": await res.json(), "headers": res.headers})
+        return Ok({"status": res.status, "body": await res.json(), "headers": dict(res.headers)})
 
     return Future(fn())
 
 
 async def download_valid_url_and_validate(url: str) -> Result[Dict[Any, Any], ErrorEnum]:
+    """ With ResultT """
     return (
         await ResultT[Future](Future.pure(check_url(url)))
         .bind(lambda u: ResultT[Future](download_url(u)))
@@ -75,9 +76,44 @@ async def download_valid_url_and_validate(url: str) -> Result[Dict[Any, Any], Er
     )
 
 
-if __name__ == "__main__":
-    result: Result[Dict[Any, Any], ErrorEnum] = asyncio.run(
-        download_valid_url_and_validate("https://postman-echo.com/get?foo1=bar1&foo2=bar2")
+async def download_valid_url_and_validate_2(url: str) -> Result[aiohttp.ClientResponse, ErrorEnum]:
+    """ Without ResultT """
+    return (
+        await Future.pure(check_url(url))
+        .bind(lambda r: download_url(r.value) if isinstance(r, Ok) else Future.pure(r))
+        .bind(lambda r: validate_http_response(r.value) if isinstance(r, Ok) else Future.pure(r))
     )
 
-    result.map(pprint).mapError(print)
+
+async def download_and_print_valid_url(url: str) -> None:
+    """ Without ResultT 2 """
+    (
+        await Future.pure(check_url(url))
+        .bind(lambda r: download_url(r.value) if isinstance(r, Ok) else Future.pure(r))
+        .bind(lambda r: validate_http_response(r.value) if isinstance(r, Ok) else Future.pure(r))
+        .map(lambda r: r.map(pprint).mapError(print))
+    )
+
+
+if __name__ == "__main__":
+    print("\n\033[36m======= With ResultT =======\n")
+
+    (
+        asyncio.run(download_valid_url_and_validate("https://postman-echo.com/get?foo1=bar1&foo2=bar2"))
+        .map(pprint)
+        .mapError(print)
+    )
+
+    print("\n\033[91m======= Without ResultT =======\n")
+
+    (
+        asyncio.run(download_valid_url_and_validate_2("https://postman-echo.com/get?foo1=bar1&foo2=bar2"))
+        .map(pprint)
+        .mapError(print)
+    )
+
+    print("\n\033[35m======= Without ResultT 2 =======\n")
+
+    asyncio.run(download_and_print_valid_url("https://postman-echo.com/get?foo1=bar1&foo2=bar2"))
+
+    print("\033[0m")
