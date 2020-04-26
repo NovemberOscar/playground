@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 from enum import Enum
 from pprint import pprint
@@ -15,10 +17,10 @@ class FutureResult(Generic[A, B]):
     def __init__(self, fut_res: Future[Result[A, B]]):
         self.fut_res = fut_res
 
-    def map(self, fn: Callable[[A], Result[C, B]]) -> "FutureResult[A, B]":
+    def map(self, fn: Callable[[A], Result[C, B]]) -> FutureResult[A, B]:
         return FutureResult(self.fut_res.map(lambda res: res.map(fn)))
 
-    def bind(self, fn: Callable[[A], "FutureResult[C, B]"]) -> "FutureResult[A, B]":
+    def bind(self, fn: Callable[[A], FutureResult[C, B]]) -> FutureResult[A, B]:
         return FutureResult(
             self.fut_res.bind(lambda r: fn(r.value).fut_res if isinstance(r, Ok) else Future.pure(Err(r.err)))
         )
