@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 from enum import Enum
 from pprint import pprint
-from typing import Dict, Any, Callable, Generic, TypeVar, TypedDict
+from typing import Any, Callable, Dict, Generic, TypeVar
 
 import aiohttp
-from monads import Result, Ok, Err, Future
+from monads import Err, Future, Ok, Result
 
 A = TypeVar("A")
 B = TypeVar("B")
@@ -29,9 +29,7 @@ class FutureResult(Generic[A, B]):
         return self.fut_res.__await__()
 
 
-ResultT = {
-    Future: FutureResult
-}
+ResultT = {Future: FutureResult}
 
 
 class ErrorEnum(Enum):
@@ -64,19 +62,17 @@ def validate_http_response(res: aiohttp.ClientResponse) -> Future[Result[Dict[An
         if res.status >= 400:
             return Err(ErrorEnum.InvalidResponse)
 
-        return Ok({
-            "status": res.status,
-            "body": await res.json(),
-            "headers": res.headers,
-        })
+        return Ok({"status": res.status, "body": await res.json(), "headers": res.headers})
 
     return Future(fn())
 
 
 async def download_valid_url_and_validate(url: str) -> Result[Dict[Any, Any], ErrorEnum]:
-    return await ResultT[Future](Future.pure(check_url(url)))\
-            .bind(lambda u: ResultT[Future](download_url(u)))\
-            .bind(lambda r: ResultT[Future](validate_http_response(r)))
+    return (
+        await ResultT[Future](Future.pure(check_url(url)))
+        .bind(lambda u: ResultT[Future](download_url(u)))
+        .bind(lambda r: ResultT[Future](validate_http_response(r)))
+    )
 
 
 if __name__ == "__main__":
